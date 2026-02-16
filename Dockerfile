@@ -22,7 +22,9 @@ ENV CMAKE_BUILD_PARALLEL_LEVEL=8
 # Install Python, git and other necessary tools
 RUN apt-get update && apt-get install -y \
     python3.12 \
+    python3.12-dev \
     python3.12-venv \
+    build-essential \
     git \
     wget \
     libgl1 \
@@ -80,6 +82,13 @@ RUN chmod +x /start.sh
 # Add script to install custom nodes
 COPY scripts/comfy-node-install.sh /usr/local/bin/comfy-node-install
 RUN chmod +x /usr/local/bin/comfy-node-install
+
+# Install custom nodes
+RUN comfy-node-install \
+    comfyui-ic-light-native \
+    comfyui-kjnodes \
+    comfyui_ipadapter_plus \
+    comfyui_essentials
 
 # Prevent pip from asking for confirmation during uninstall steps in custom nodes
 ENV PIP_NO_INPUT=1
