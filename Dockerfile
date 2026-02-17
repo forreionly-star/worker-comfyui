@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     git \
     wget \
+    aria2 \
     libgl1 \
     libglib2.0-0 \
     libsm6 \
@@ -66,7 +67,7 @@ RUN if [ "$ENABLE_PYTORCH_UPGRADE" = "true" ]; then \
 # Change working directory to ComfyUI
 WORKDIR /comfyui
 
-# Support for the network volume
+# Support for the network volume (keeping it for compatibility but prioritizing local)
 ADD src/extra_model_paths.yaml ./
 
 # Go back to the root
@@ -100,7 +101,7 @@ RUN chmod +x /usr/local/bin/comfy-manager-set-mode
 # Set the default command to run when starting the container
 CMD ["/start.sh"]
 
-# Stage 2: Download models
+# Stage 2: Download models (Baking everything in for a "zero-token" experience)
 FROM base AS downloader
 
 ARG HF_P1=hf_GggdMrUfmPAy
@@ -113,19 +114,18 @@ ARG MODEL_TYPE=flux1-dev-fp8
 WORKDIR /comfyui
 
 # Create necessary directories upfront
-RUN mkdir -p models/checkpoints models/vae models/unet models/clip models/text_encoders models/diffusion_models models/model_patches
+RUN mkdir -p models/checkpoints models/vae models/unet models/clip models/text_encoders models/diffusion_models models/model_patches models/xlabs models/clip_vision
 
-# Only include lightweight VAE/encodings to keep image pulls fast
+# Download Flux + Winning Formula Models directly into the image
 RUN if [ "$MODEL_TYPE" = "flux1-dev-fp8" ]; then \
-      wget -q -O models/checkpoints/flux1-dev-fp8.safetensors https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors && \
-      wget -q --header="Authorization: Bearer ${HUGGINGFACE_ACCESS_TOKEN}" -O models/vae/ae.safetensors https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/ae.safetensors; \
-    fi
-
-RUN if [ "$MODEL_TYPE" = "z-image-turbo" ]; then \
-      wget -q -O models/text_encoders/qwen_3_4b.safetensors https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors && \
-      wget -q -O models/diffusion_models/z_image_turbo_bf16.safetensors https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors && \
-      wget -q -O models/vae/ae.safetensors https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors && \
-      wget -q -O models/model_patches/Z-Image-Turbo-Fun-Controlnet-Union.safetensors https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union/resolve/main/Z-Image-Turbo-Fun-Controlnet-Union.safetensors; \
+      # Checkpoint
+      aria2c -x 16 -s 16 -k 1M -o models/checkpoints/flux1-dev-fp8.safetensors https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors && \
+      # VAE
+      aria2c -x 16 -s 16 -k 1M --header="Authorization: Bearer ${HUGGINGFACE_ACCESS_TOKEN}" -o models/vae/ae.safetensors https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/ae.safetensors && \
+      # CLIP Vision (SigLIP) for IP-Adapter
+      aria2c -x 16 -s 16 -k 1M -o models/clip_vision/google_siglip_l16_768.safetensors https://huggingface.co/Comfy-Org/siglip_vit_l16_768/resolve/main/siglip_vit_l16_768.safetensors && \
+      # X-Labs IP-Adapter
+      aria2c -x 16 -s 16 -k 1M -o models/xlabs/flux-ip-adapter.safetensors https://huggingface.co/XLabs-AI/flux-ip-adapter/resolve/main/flux_ip_adapter.safetensors; \
     fi
 
 # Stage 3: Final image
